@@ -1,0 +1,17 @@
+{
+    "name": "sm-php-wrapper",
+    "description": "PHP wrapper for SM cryptographic algorithms",
+    "type": "project",
+    "require": {
+        "php": ">=7.4"
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/lihongjie0209/sm-php-bc.git"
+        }
+    ],
+    "require": {
+        "lihongjie0209/sm-php-bc": "dev-main"
+    }
+}
