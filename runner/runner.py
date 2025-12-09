@@ -15,6 +15,9 @@ from pathlib import Path
 class LanguageWrapper:
     """Wrapper for language-specific CLI tools."""
     
+    # Timeout for wrapper execution in seconds
+    EXECUTION_TIMEOUT = 30
+    
     def __init__(self, name: str, command: List[str], working_dir: Optional[str] = None):
         self.name = name
         self.command = command
@@ -30,7 +33,7 @@ class LanguageWrapper:
                 capture_output=True,
                 text=True,
                 cwd=self.working_dir,
-                timeout=30
+                timeout=self.EXECUTION_TIMEOUT
             )
             
             if result.returncode != 0 and not result.stdout:

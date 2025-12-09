@@ -46,7 +46,7 @@ echo ""
 # Python wrapper
 echo "Installing Python dependencies..."
 cd wrappers/py
-if pip3 install -r requirements.txt; then
+if python3 -m pip install -r requirements.txt; then
     echo "✓ Python dependencies installed"
 else
     echo "⚠️  Failed to install Python dependencies"
