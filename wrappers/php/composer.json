@@ -2,9 +2,6 @@
     "name": "sm-php-wrapper",
     "description": "PHP wrapper for SM cryptographic algorithms",
     "type": "project",
-    "require": {
-        "php": ">=7.4"
-    },
     "repositories": [
         {
             "type": "vcs",
@@ -12,6 +9,7 @@
         }
     ],
     "require": {
+        "php": ">=7.4",
         "lihongjie0209/sm-php-bc": "dev-main"
     }
 }
