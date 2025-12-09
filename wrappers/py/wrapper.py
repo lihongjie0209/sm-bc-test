@@ -10,9 +10,11 @@ import argparse
 from typing import Dict, Any
 
 try:
-    from sm_py_bc import SM2, SM3, SM4
-except ImportError:
-    print(json.dumps({"status": "error", "message": "sm-py-bc library not installed"}), file=sys.stderr)
+    from sm_bc.crypto.digests import SM3Digest
+    from sm_bc.crypto.SM2 import SM2
+    from sm_bc.crypto.cipher import create_sm4_cipher
+except ImportError as e:
+    print(json.dumps({"status": "error", "message": f"sm-py-bc library not installed: {e}"}), file=sys.stderr)
     sys.exit(1)
 
 
@@ -23,12 +25,14 @@ def sm3_hash(data: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(input_data, str):
             input_data = input_data.encode()
         
-        sm3 = SM3()
-        result = sm3.hash(input_data)
+        digest = SM3Digest()
+        digest.update_bytes(input_data, 0, len(input_data))
+        result = bytearray(digest.get_digest_size())
+        digest.do_final(result, 0)
         
         return {
             "status": "success",
-            "output": result.hex() if isinstance(result, bytes) else result
+            "output": result.hex()
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -49,12 +53,21 @@ def sm4_encrypt(data: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(iv, str) and iv:
             iv = bytes.fromhex(iv)
         
-        sm4 = SM4(key, mode=mode, iv=iv if iv else None)
-        ciphertext = sm4.encrypt(plaintext)
+        # Create cipher
+        cipher = create_sm4_cipher(mode=mode.upper(), padding="PKCS7")
+        
+        # Initialize with key (and IV for CBC)
+        if mode.upper() == "CBC" and iv:
+            cipher.init(True, key, iv)
+        else:
+            cipher.init(True, key, None)
+        
+        # Encrypt
+        ciphertext = cipher.encrypt(plaintext)
         
         return {
             "status": "success",
-            "output": ciphertext.hex() if isinstance(ciphertext, bytes) else ciphertext
+            "output": ciphertext.hex()
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -75,12 +88,21 @@ def sm4_decrypt(data: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(iv, str) and iv:
             iv = bytes.fromhex(iv)
         
-        sm4 = SM4(key, mode=mode, iv=iv if iv else None)
-        plaintext = sm4.decrypt(ciphertext)
+        # Create cipher
+        cipher = create_sm4_cipher(mode=mode.upper(), padding="PKCS7")
+        
+        # Initialize with key (and IV for CBC)
+        if mode.upper() == "CBC" and iv:
+            cipher.init(False, key, iv)
+        else:
+            cipher.init(False, key, None)
+        
+        # Decrypt
+        plaintext = cipher.decrypt(ciphertext)
         
         return {
             "status": "success",
-            "output": plaintext.decode() if isinstance(plaintext, bytes) else plaintext
+            "output": plaintext.decode()
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -90,29 +112,36 @@ def sm2_sign(data: Dict[str, Any]) -> Dict[str, Any]:
     """Sign data using SM2."""
     try:
         message = data.get("message", "")
-        private_key = data.get("private_key", "")
+        private_key_hex = data.get("private_key", "")
         
-        if isinstance(message, str):
-            message = message.encode()
-        
-        sm2 = SM2()
-        if private_key:
-            sm2.set_private_key(private_key)
+        # Generate or use provided private key
+        if private_key_hex:
+            d = int(private_key_hex, 16)
+            # Calculate public key
+            G = SM2.get_G()
+            Q = G.multiply(d)
+            public_key_hex = "04" + hex(Q.get_affine_x_coord().to_big_integer())[2:].zfill(64) + \
+                             hex(Q.get_affine_y_coord().to_big_integer())[2:].zfill(64)
         else:
-            # Generate new key pair if not provided
-            private_key, public_key = sm2.generate_keypair()
-            
-        signature = sm2.sign(message)
+            # Generate new key pair
+            keypair = SM2.generate_key_pair()
+            d = keypair['private_key']
+            private_key_hex = hex(d)[2:].zfill(64)
+            public_key_hex = "04" + hex(keypair['public_key']['x'])[2:].zfill(64) + \
+                             hex(keypair['public_key']['y'])[2:].zfill(64)
+        
+        # Sign
+        signature = SM2.sign(message, d)
         
         result = {
             "status": "success",
-            "signature": signature.hex() if isinstance(signature, bytes) else signature
+            "signature": signature.hex()
         }
         
         # Include keys if generated
         if not data.get("private_key"):
-            result["private_key"] = private_key
-            result["public_key"] = public_key
+            result["private_key"] = private_key_hex
+            result["public_key"] = public_key_hex
         
         return result
     except Exception as e:
@@ -123,18 +152,20 @@ def sm2_verify(data: Dict[str, Any]) -> Dict[str, Any]:
     """Verify SM2 signature."""
     try:
         message = data.get("message", "")
-        signature = data.get("signature", "")
-        public_key = data.get("public_key", "")
+        signature_hex = data.get("signature", "")
+        public_key_hex = data.get("public_key", "")
         
-        if isinstance(message, str):
-            message = message.encode()
-        if isinstance(signature, str):
-            signature = bytes.fromhex(signature)
+        # Parse signature
+        signature = bytes.fromhex(signature_hex)
         
-        sm2 = SM2()
-        sm2.set_public_key(public_key)
+        # Parse public key
+        if public_key_hex.startswith("04"):
+            public_key_hex = public_key_hex[2:]
+        x = int(public_key_hex[:64], 16)
+        y = int(public_key_hex[64:128], 16)
         
-        is_valid = sm2.verify(message, signature)
+        # Verify
+        is_valid = SM2.verify(message, signature, {'x': x, 'y': y})
         
         return {
             "status": "success",
@@ -148,19 +179,20 @@ def sm2_encrypt(data: Dict[str, Any]) -> Dict[str, Any]:
     """Encrypt data using SM2."""
     try:
         plaintext = data.get("plaintext", "")
-        public_key = data.get("public_key", "")
+        public_key_hex = data.get("public_key", "")
         
-        if isinstance(plaintext, str):
-            plaintext = plaintext.encode()
+        # Parse public key
+        if public_key_hex.startswith("04"):
+            public_key_hex = public_key_hex[2:]
+        x = int(public_key_hex[:64], 16)
+        y = int(public_key_hex[64:128], 16)
         
-        sm2 = SM2()
-        sm2.set_public_key(public_key)
-        
-        ciphertext = sm2.encrypt(plaintext)
+        # Encrypt
+        ciphertext = SM2.encrypt(plaintext, {'x': x, 'y': y})
         
         return {
             "status": "success",
-            "output": ciphertext.hex() if isinstance(ciphertext, bytes) else ciphertext
+            "output": ciphertext.hex()
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -170,19 +202,20 @@ def sm2_decrypt(data: Dict[str, Any]) -> Dict[str, Any]:
     """Decrypt data using SM2."""
     try:
         ciphertext = data.get("ciphertext", "")
-        private_key = data.get("private_key", "")
+        private_key_hex = data.get("private_key", "")
         
         if isinstance(ciphertext, str):
             ciphertext = bytes.fromhex(ciphertext)
         
-        sm2 = SM2()
-        sm2.set_private_key(private_key)
+        # Parse private key
+        d = int(private_key_hex, 16)
         
-        plaintext = sm2.decrypt(ciphertext)
+        # Decrypt
+        plaintext = SM2.decrypt(ciphertext, d)
         
         return {
             "status": "success",
-            "output": plaintext.decode() if isinstance(plaintext, bytes) else plaintext
+            "output": plaintext.decode()
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
