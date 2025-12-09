@@ -1,0 +1,2 @@
+# No external dependencies required for the test runner
+# Uses only Python standard library

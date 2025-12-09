@@ -1,0 +1,13 @@
+{
+  "name": "sm-js-wrapper",
+  "version": "1.0.0",
+  "description": "JavaScript wrapper for SM cryptographic algorithms",
+  "main": "wrapper.js",
+  "bin": {
+    "wrapper": "./wrapper.js"
+  },
+  "dependencies": {
+    "commander": "^11.0.0",
+    "sm-js-bc": "git+https://github.com/lihongjie0209/sm-js-bc.git"
+  }
+}
